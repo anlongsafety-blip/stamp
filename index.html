@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 蓋章工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+  :root{
+    --ink:#133482;          /* 印章深藍，主色 */
+    --ink-bright:#1d4ed8;
+    --ink-soft:#e8edf9;
+    --bg:#eceef2;
+    --panel:#ffffff;
+    --line:#dde1e9;
+    --line-strong:#c7cdd9;
+    --text:#1c2230;
+    --muted:#6b7280;
+    --paper-shadow:0 1px 2px rgba(20,30,60,.06),0 12px 32px rgba(20,30,60,.12);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    color:var(--text);
+    background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    display:flex;align-items:center;gap:14px;
+    padding:16px 22px;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+  }
+  .mark{
+    width:34px;height:34px;border-radius:9px;
+    background:var(--ink);
+    display:grid;place-items:center;flex:none;
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.18);
+  }
+  .mark svg{width:20px;height:20px}
+  .title h1{font-size:17px;margin:0;letter-spacing:.5px;font-weight:650}
+  .title p{margin:2px 0 0;font-size:12.5px;color:var(--muted);letter-spacing:.2px}
+
+  .app{display:flex;height:calc(100vh - 67px);min-height:0}
+  aside{
+    width:320px;flex:none;background:var(--panel);
+    border-right:1px solid var(--line);
+    overflow-y:auto;padding:18px 18px 40px;
+  }
+  .step{margin-bottom:22px}
+  .step-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .num{
+    width:22px;height:22px;border-radius:50%;flex:none;
+    background:var(--ink-soft);color:var(--ink);
+    font-size:12px;font-weight:700;display:grid;place-items:center;
+  }
+  .step-head h2{font-size:13px;margin:0;font-weight:650;letter-spacing:.3px}
+
+  .drop{
+    border:1.5px dashed var(--line-strong);border-radius:var(--radius);
+    padding:16px;text-align:center;cursor:pointer;
+    transition:border-color .15s,background .15s;
+    background:#fbfcfe;
+  }
+  .drop:hover{border-color:var(--ink-bright);background:#f7f9ff}
+  .drop.drag{border-color:var(--ink);background:var(--ink-soft)}
+  .drop .ic{font-size:20px;line-height:1}
+  .drop .t{font-size:13px;margin-top:6px;font-weight:600}
+  .drop .s{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .drop.has{border-style:solid;border-color:var(--ink);background:#fff}
+  .filechip{display:flex;align-items:center;gap:8px;justify-content:center;font-size:12.5px}
+  .filechip .dot{width:7px;height:7px;border-radius:50%;background:#2bbb6b;flex:none}
+  .filechip .name{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stamp-prev{margin-top:10px;display:none;align-items:center;justify-content:center;
+    background:#f4f6fb;border:1px solid var(--line);border-radius:9px;padding:8px}
+  .stamp-prev img{max-width:130px;max-height:80px}
+
+  .ctrl{margin-bottom:13px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .ctrl label b{color:var(--text);font-weight:600}
+  input[type=range]{width:100%;accent-color:var(--ink)}
+  input[type=range]:disabled{opacity:.4}
+
+  .btn{
+    width:100%;border:none;border-radius:10px;padding:11px 14px;
+    font-size:13.5px;font-weight:650;cursor:pointer;letter-spacing:.3px;
+    font-family:inherit;transition:background .15s,opacity .15s;
+  }
+  .btn.primary{background:var(--ink);color:#fff}
+  .btn.primary:hover{background:#0f2a6b}
+  .btn.ghost{background:var(--ink-soft);color:var(--ink)}
+  .btn.ghost:hover{background:#dbe4f8}
+  .btn.danger{background:#fdeaea;color:#c0392b}
+  .btn.danger:hover{background:#fbdcdc}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-row{display:flex;gap:8px;margin-bottom:8px}
+  .btn-row .btn{padding:9px}
+
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:4px}
+  .count{font-size:12px;color:var(--ink);font-weight:600;margin-top:2px}
+
+  /* workspace */
+  main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .bar{
+    display:flex;align-items:center;gap:12px;padding:10px 18px;
+    background:var(--panel);border-bottom:1px solid var(--line);
+  }
+  .pager{display:flex;align-items:center;gap:8px}
+  .pager button{
+    width:30px;height:30px;border-radius:8px;border:1px solid var(--line-strong);
+    background:#fff;cursor:pointer;font-size:15px;color:var(--text)
+  }
+  .pager button:disabled{opacity:.35;cursor:not-allowed}
+  .pager .info{font-size:13px;min-width:90px;text-align:center}
+  .pager .info b{color:var(--ink)}
+  .bar .spacer{flex:1}
+  .badge{font-size:11.5px;color:var(--muted)}
+  .badge .pin{color:var(--ink);font-weight:700}
+
+  .stage{flex:1;overflow:auto;padding:28px;display:flex;justify-content:center;align-items:flex-start}
+  .empty{
+    margin:auto;text-align:center;color:var(--muted);max-width:340px
+  }
+  .empty .big{font-size:34px;margin-bottom:10px}
+  .empty h3{color:var(--text);font-size:15px;margin:0 0 6px}
+  .empty p{font-size:13px;line-height:1.6;margin:0}
+
+  .wrap{position:relative;box-shadow:var(--paper-shadow);background:#fff;flex:none}
+  .wrap canvas{display:block;border-radius:2px}
+  .placement{
+    position:absolute;cursor:grab;touch-action:none;
+    outline:1.5px dashed transparent;
+  }
+  .placement.sel{outline-color:var(--ink-bright)}
+  .placement img{width:100%;height:100%;display:block;pointer-events:none;user-select:none}
+  .placement:active{cursor:grabbing}
+  .handle{
+    position:absolute;right:-7px;bottom:-7px;width:15px;height:15px;
+    background:#fff;border:2px solid var(--ink-bright);border-radius:50%;
+    cursor:nwse-resize;touch-action:none;display:none;
+  }
+  .placement.sel .handle{display:block}
+  .del{
+    position:absolute;left:-9px;top:-9px;width:19px;height:19px;border-radius:50%;
+    background:#c0392b;color:#fff;border:none;cursor:pointer;display:none;
+    font-size:12px;line-height:17px;text-align:center;padding:0;
+  }
+  .placement.sel .del{display:block}
+
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1c2230;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;
+    opacity:0;transition:.25s;pointer-events:none;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.25)
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .warn{
+    margin:12px 18px 0;padding:9px 12px;border-radius:9px;font-size:12px;
+    background:#fff6e6;color:#8a5a00;border:1px solid #f3dca0;display:none
+  }
+  @media (max-width:760px){
+    aside{width:100%;position:absolute;z-index:30;height:auto;max-height:60vh;border-right:none;border-bottom:1px solid var(--line)}
+    .app{flex-direction:column}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  :focus-visible{outline:2px solid var(--ink-bright);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <div class="mark" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 4h6l-1 6h2a3 3 0 0 1 3 3v1H5v-1a3 3 0 0 1 3-3h2L9 4Z"/><path d="M4 19h16"/>
+    </svg>
+  </div>
+  <div class="title">
+    <h1>PDF 蓋章工具</h1>
+    <p>上傳 PDF 與印章，拖曳定位後匯出 · 全程在你的瀏覽器處理，不會上傳檔案</p>
+  </div>
+</header>
+
+<div class="app">
+  <aside>
+    <!-- Step 1 -->
+    <div class="step">
+      <div class="step-head"><span class="num">1</span><h2>上傳 PDF</h2></div>
+      <div class="drop" id="pdfDrop">
+        <div id="pdfEmpty">
+          <div class="ic">📄</div>
+          <div class="t">選擇 PDF 檔</div>
+          <div class="s">點此選取，或將檔案拖進來</div>
+        </div>
+        <div class="filechip" id="pdfChip" style="display:none">
+          <span class="dot"></span><span class="name" id="pdfName"></span>
+        </div>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf" hidden>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step">
+      <div class="step-head"><span class="num">2</span><h2>上傳印章 (PNG)</h2></div>
+      <div class="drop" id="stampDrop">
+        <div id="stampEmpty">
+          <div class="ic">🔖</div>
+          <div class="t">選擇印章圖檔</div>
+          <div class="s">建議用透明背景 PNG</div>
+        </div>
+        <div class="filechip" id="stampChip" style="display:none">
+          <span class="dot"></span><span class="name" id="stampName"></span>
+        </div>
+      </div>
+      <div class="stamp-prev" id="stampPrev"><img id="stampPrevImg" alt="印章預覽"></div>
+      <input type="file" id="stampInput" accept="image/png,image/*" hidden>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step">
+      <div class="step-head"><span class="num">3</span><h2>放置印章</h2></div>
+      <div class="btn-row">
+        <button class="btn ghost" id="addBtn" disabled>＋ 在此頁加入</button>
+        <button class="btn ghost" id="allBtn" disabled>蓋到所有頁</button>
+      </div>
+      <div class="ctrl">
+        <label>大小 <b id="sizeVal">—</b></label>
+        <input type="range" id="sizeR" min="3" max="90" value="30" disabled>
+      </div>
+      <div class="ctrl">
+        <label>旋轉 <b id="rotVal">—</b></label>
+        <input type="range" id="rotR" min="-180" max="180" value="0" disabled>
+      </div>
+      <div class="ctrl">
+        <label>不透明度 <b id="opVal">—</b></label>
+        <input type="range" id="opR" min="10" max="100" value="100" disabled>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" id="delBtn" disabled>刪除選取</button>
+        <button class="btn danger" id="clrBtn" disabled>清除此頁</button>
+      </div>
+      <p class="hint">在頁面上拖曳印章移動位置；選取後拖右下角圓點縮放、用上方滑桿旋轉與調整透明度。</p>
+      <div class="count" id="totalCount"></div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step" style="margin-bottom:0">
+      <div class="step-head"><span class="num">4</span><h2>匯出</h2></div>
+      <button class="btn primary" id="exportBtn" disabled>匯出蓋章後的 PDF</button>
+      <p class="hint">會以原始 PDF 畫質產生新檔，原檔不會被更動。</p>
+    </div>
+  </aside>
+
+  <main>
+    <div class="bar">
+      <div class="pager">
+        <button id="prevBtn" disabled aria-label="上一頁">‹</button>
+        <div class="info">第 <b id="curPage">–</b> / <span id="numPages">–</span> 頁</div>
+        <button id="nextBtn" disabled aria-label="下一頁">›</button>
+      </div>
+      <div class="spacer"></div>
+      <div class="badge">此頁印章：<span class="pin" id="pagePins">0</span></div>
+    </div>
+    <div class="warn" id="rotWarn">⚠ 偵測到此 PDF 有頁面方向旋轉，蓋章位置可能會偏移，建議使用方向正常的 PDF。</div>
+    <div class="stage" id="stage">
+      <div class="empty" id="emptyState">
+        <div class="big">🗂️</div>
+        <h3>先上傳一份 PDF</h3>
+        <p>完成左側步驟 1、2 後，就能在這裡把印章拖到想要的位置，再匯出成新的 PDF。</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const pdfjsLib = window.pdfjsLib;
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const { PDFDocument, degrees } = PDFLib;
+
+const S = {
+  pdfFile:null, pdfDoc:null, numPages:0, cur:0,
+  pageHasRotation:false,
+  stampFile:null, stampUrl:null, stampAspect:1,
+  placements:[], // {id,page,cx,cy,w,rot,op}
+  sel:null, nextId:1,
+};
+
+const $ = id => document.getElementById(id);
+const stage=$('stage'), toast=$('toast');
+let wrap=null, canvas=null;
+
+/* ---------- helpers ---------- */
+function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>toast.classList.remove('show'),2200); }
+function fmtName(n){ return n.length>26 ? n.slice(0,12)+'…'+n.slice(-10) : n; }
+
+/* ---------- file inputs / drop zones ---------- */
+function wireDrop(dropEl, inputEl, onFile, accept){
+  dropEl.addEventListener('click', ()=>inputEl.click());
+  inputEl.addEventListener('change', e=>{ if(e.target.files[0]) onFile(e.target.files[0]); });
+  ['dragenter','dragover'].forEach(ev=>dropEl.addEventListener(ev, e=>{e.preventDefault();dropEl.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev, e=>{e.preventDefault();dropEl.classList.remove('drag');}));
+  dropEl.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) onFile(f); });
+}
+
+wireDrop($('pdfDrop'), $('pdfInput'), loadPdf);
+wireDrop($('stampDrop'), $('stampInput'), loadStamp);
+
+/* ---------- load PDF ---------- */
+async function loadPdf(file){
+  if(file.type!=='application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){ showToast('請選擇 PDF 檔'); return; }
+  S.pdfFile=file;
+  try{
+    const buf = await file.arrayBuffer();
+    S.pdfDoc = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
+    S.numPages = S.pdfDoc.numPages;
+    S.cur=0; S.placements=[]; S.sel=null;
+    // detect page rotation
+    S.pageHasRotation=false;
+    for(let i=1;i<=S.numPages;i++){ const p=await S.pdfDoc.getPage(i); if(p.rotate%360!==0){S.pageHasRotation=true;break;} }
+    $('rotWarn').style.display = S.pageHasRotation ? 'block':'none';
+
+    $('pdfEmpty').style.display='none'; $('pdfChip').style.display='flex';
+    $('pdfName').textContent=fmtName(file.name); $('pdfDrop').classList.add('has');
+    $('numPages').textContent=S.numPages;
+    $('emptyState')&&($('emptyState').style.display='none');
+    await renderPage();
+    refreshControls();
+    showToast('PDF 已載入（'+S.numPages+' 頁）');
+  }catch(err){
+    console.error(err); showToast('無法讀取此 PDF：'+(err&&err.message||'未知錯誤'));
+  }
+}
+
+/* ---------- load stamp ---------- */
+function loadStamp(file){
+  if(!file.type.startsWith('image/')){ showToast('請選擇圖片檔（建議 PNG）'); return; }
+  S.stampFile=file;
+  const r=new FileReader();
+  r.onload=()=>{
+    S.stampUrl=r.result;
+    const img=new Image();
+    img.onload=()=>{
+      S.stampAspect = img.naturalWidth/img.naturalHeight || 1;
+      $('stampEmpty').style.display='none'; $('stampChip').style.display='flex';
+      $('stampName').textContent=fmtName(file.name); $('stampDrop').classList.add('has');
+      $('stampPrev').style.display='flex'; $('stampPrevImg').src=S.stampUrl;
+      refreshControls(); renderPlacements();
+      showToast('印章已載入');
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(file);
+}
+
+/* ---------- render page ---------- */
+async function renderPage(){
+  if(!S.pdfDoc) return;
+  const page = await S.pdfDoc.getPage(S.cur+1);
+  const vp1 = page.getViewport({scale:1});
+  const avail = Math.max(stage.clientWidth - 56, 280);
+  const targetW = Math.min(avail, 940);
+  const displayScale = targetW / vp1.width;
+  const dpr = window.devicePixelRatio || 1;
+  const vp = page.getViewport({scale: displayScale*dpr});
+
+  if(!wrap){ wrap=document.createElement('div'); wrap.className='wrap'; canvas=document.createElement('canvas'); wrap.appendChild(canvas);
+    wrap.addEventListener('pointerdown', e=>{ if(e.target===wrap||e.target===canvas){ select(null);} });
+  }
+  if(!stage.contains(wrap)){ stage.innerHTML=''; stage.appendChild(wrap); }
+
+  canvas.width=Math.floor(vp.width); canvas.height=Math.floor(vp.height);
+  const cssW=vp1.width*displayScale, cssH=vp1.height*displayScale;
+  canvas.style.width=cssW+'px'; canvas.style.height=cssH+'px';
+  wrap.style.width=cssW+'px'; wrap.style.height=cssH+'px';
+  const ctx=canvas.getContext('2d');
+  await page.render({canvasContext:ctx, viewport:vp}).promise;
+
+  $('curPage').textContent=S.cur+1;
+  $('prevBtn').disabled = S.cur<=0;
+  $('nextBtn').disabled = S.cur>=S.numPages-1;
+  renderPlacements();
+}
+
+/* ---------- placements ---------- */
+function renderPlacements(){
+  if(!wrap) return;
+  wrap.querySelectorAll('.placement').forEach(n=>n.remove());
+  const W=wrap.clientWidth, H=wrap.clientHeight;
+  const here=S.placements.filter(p=>p.page===S.cur);
+  here.forEach(p=>{
+    const wpx=p.w*W, hpx=wpx/S.stampAspect;
+    const el=document.createElement('div');
+    el.className='placement'+(p.id===S.sel?' sel':'');
+    el.dataset.id=p.id;
+    el.style.width=wpx+'px'; el.style.height=hpx+'px';
+    el.style.left=(p.cx*W - wpx/2)+'px';
+    el.style.top=(p.cy*H - hpx/2)+'px';
+    el.style.transform='rotate('+p.rot+'deg)';
+    el.style.opacity=p.op;
+    el.innerHTML='<img src="'+S.stampUrl+'" draggable="false"><button class="del" title="刪除">✕</button><span class="handle"></span>';
+    el.addEventListener('pointerdown', e=>startDrag(e,p,el));
+    el.querySelector('.handle').addEventListener('pointerdown', e=>startResize(e,p,el));
+    el.querySelector('.del').addEventListener('pointerdown', e=>{e.stopPropagation();});
+    el.querySelector('.del').addEventListener('click', e=>{e.stopPropagation(); removePlacement(p.id);});
+    wrap.appendChild(el);
+  });
+  $('pagePins').textContent=here.length;
+  $('totalCount').textContent = S.placements.length ? ('目前共 '+S.placements.length+' 個印章') : '';
+}
+
+function startDrag(e,p,el){
+  if(e.target.classList.contains('handle')||e.target.classList.contains('del')) return;
+  e.preventDefault(); select(p.id);
+  el.setPointerCapture(e.pointerId);
+  const move=ev=>{
+    const r=wrap.getBoundingClientRect();
+    p.cx=Math.min(1.1,Math.max(-.1,(ev.clientX-r.left)/r.width));
+    p.cy=Math.min(1.1,Math.max(-.1,(ev.clientY-r.top)/r.height));
+    const W=wrap.clientWidth,H=wrap.clientHeight,wpx=p.w*W,hpx=wpx/S.stampAspect;
+    el.style.left=(p.cx*W-wpx/2)+'px'; el.style.top=(p.cy*H-hpx/2)+'px';
+  };
+  const up=ev=>{ el.releasePointerCapture(e.pointerId); el.removeEventListener('pointermove',move); el.removeEventListener('pointerup',up); };
+  el.addEventListener('pointermove',move); el.addEventListener('pointerup',up);
+}
+
+function startResize(e,p,el){
+  e.preventDefault(); e.stopPropagation(); select(p.id);
+  const handle=e.target; handle.setPointerCapture(e.pointerId);
+  const move=ev=>{
+    const r=wrap.getBoundingClientRect();
+    const cxpx=p.cx*r.width, halfW=Math.abs((ev.clientX-r.left)-cxpx);
+    p.w=Math.min(2,Math.max(.03,(halfW*2)/r.width));
+    const W=wrap.clientWidth,H=wrap.clientHeight,wpx=p.w*W,hpx=wpx/S.stampAspect;
+    el.style.width=wpx+'px'; el.style.height=hpx+'px';
+    el.style.left=(p.cx*W-wpx/2)+'px'; el.style.top=(p.cy*H-hpx/2)+'px';
+    $('sizeR').value=Math.round(p.w*100); $('sizeVal').textContent=Math.round(p.w*100)+'%';
+  };
+  const up=ev=>{ handle.releasePointerCapture(e.pointerId); handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); };
+  handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up);
+}
+
+function addStamp(toAllPages){
+  if(!S.stampUrl){ showToast('請先上傳印章'); return; }
+  if(!S.pdfDoc){ showToast('請先上傳 PDF'); return; }
+  const base={cx:.5,cy:.5,w:.3,rot:0,op:1};
+  if(toAllPages){
+    for(let i=0;i<S.numPages;i++) S.placements.push({id:S.nextId++,page:i,...base});
+    showToast('已在每一頁加入印章');
+  }else{
+    const id=S.nextId++;
+    S.placements.push({id,page:S.cur,...base});
+    S.sel=id;
+  }
+  renderPlacements(); refreshControls();
+}
+
+function removePlacement(id){ S.placements=S.placements.filter(p=>p.id!==id); if(S.sel===id)S.sel=null; renderPlacements(); refreshControls(); }
+function clearPage(){ S.placements=S.placements.filter(p=>p.page!==S.cur); S.sel=null; renderPlacements(); refreshControls(); }
+
+function select(id){
+  S.sel=id;
+  if(wrap){ wrap.querySelectorAll('.placement').forEach(n=>n.classList.toggle('sel', n.dataset.id===String(id))); }
+  refreshControls();
+}
+function selected(){ return S.placements.find(p=>p.id===S.sel); }
+
+/* ---------- controls state ---------- */
+function refreshControls(){
+  const ready = !!S.pdfDoc && !!S.stampUrl;
+  $('addBtn').disabled=!ready; $('allBtn').disabled=!ready;
+  $('exportBtn').disabled=!S.pdfDoc;
+  $('clrBtn').disabled = !S.placements.some(p=>p.page===S.cur);
+  const p=selected();
+  $('delBtn').disabled=!p;
+  ['sizeR','rotR','opR'].forEach(i=>$(i).disabled=!p);
+  if(p){
+    $('sizeR').value=Math.round(p.w*100); $('sizeVal').textContent=Math.round(p.w*100)+'%';
+    $('rotR').value=Math.round(p.rot); $('rotVal').textContent=Math.round(p.rot)+'°';
+    $('opR').value=Math.round(p.op*100); $('opVal').textContent=Math.round(p.op*100)+'%';
+  }else{
+    $('sizeVal').textContent='—'; $('rotVal').textContent='—'; $('opVal').textContent='—';
+  }
+}
+
+$('sizeR').addEventListener('input',e=>{const p=selected();if(!p)return;p.w=(+e.target.value)/100;$('sizeVal').textContent=e.target.value+'%';renderPlacements();});
+$('rotR').addEventListener('input',e=>{const p=selected();if(!p)return;p.rot=+e.target.value;$('rotVal').textContent=e.target.value+'°';renderPlacements();});
+$('opR').addEventListener('input',e=>{const p=selected();if(!p)return;p.op=(+e.target.value)/100;$('opVal').textContent=e.target.value+'%';renderPlacements();});
+
+$('addBtn').addEventListener('click',()=>addStamp(false));
+$('allBtn').addEventListener('click',()=>addStamp(true));
+$('delBtn').addEventListener('click',()=>{const p=selected();if(p)removePlacement(p.id);});
+$('clrBtn').addEventListener('click',clearPage);
+$('prevBtn').addEventListener('click',async()=>{if(S.cur>0){S.cur--;S.sel=null;await renderPage();refreshControls();}});
+$('nextBtn').addEventListener('click',async()=>{if(S.cur<S.numPages-1){S.cur++;S.sel=null;await renderPage();refreshControls();}});
+
+/* ---------- export ---------- */
+$('exportBtn').addEventListener('click', exportPdf);
+async function exportPdf(){
+  if(!S.pdfDoc) return;
+  const btn=$('exportBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='處理中…';
+  try{
+    const pdfBytes = await S.pdfFile.arrayBuffer();
+    const doc = await PDFDocument.load(pdfBytes);
+    let png=null;
+    if(S.placements.length){
+      const stampBytes = await S.stampFile.arrayBuffer();
+      // embedPng works for PNG; fall back to JPG if needed
+      try{ png = await doc.embedPng(stampBytes); }
+      catch(_){ png = await doc.embedJpg(stampBytes); }
+    }
+    const pages = doc.getPages();
+    for(const p of S.placements){
+      const page=pages[p.page]; if(!page) continue;
+      const {width:W,height:H} = page.getSize();
+      const wPts=p.w*W, hPts=wPts/S.stampAspect;
+      const cxPts=p.cx*W, cyPts=H-(p.cy*H);   // center, bottom-left origin
+      const thetaDeg=-p.rot;                   // css clockwise -> pdf ccw
+      const th=thetaDeg*Math.PI/180;
+      const x=cxPts-(wPts/2)*Math.cos(th)+(hPts/2)*Math.sin(th);
+      const y=cyPts-(wPts/2)*Math.sin(th)-(hPts/2)*Math.cos(th);
+      page.drawImage(png,{x,y,width:wPts,height:hPts,rotate:degrees(thetaDeg),opacity:p.op});
+    }
+    const out = await doc.save();
+    const blob=new Blob([out],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const base=(S.pdfFile.name||'document').replace(/\.pdf$/i,'');
+    a.href=url; a.download=base+'_蓋章.pdf'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    showToast('已匯出：'+base+'_蓋章.pdf');
+  }catch(err){
+    console.error(err); showToast('匯出失敗：'+(err&&err.message||'未知錯誤'));
+  }finally{ btn.disabled=false; btn.textContent=old; }
+}
+
+/* ---------- responsive re-render ---------- */
+let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(S.pdfDoc) renderPage(); },180); });
+</script>
+</body>
+</html>
