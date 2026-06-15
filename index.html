@@ -28,9 +28,10 @@
     color:var(--text);
     background:var(--bg);
     -webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;height:100vh;overflow:hidden;
   }
   header{
-    display:flex;align-items:center;gap:14px;
+    display:flex;align-items:center;gap:14px;flex:none;
     padding:16px 22px;
     background:var(--panel);
     border-bottom:1px solid var(--line);
@@ -45,7 +46,7 @@
   .title h1{font-size:17px;margin:0;letter-spacing:.5px;font-weight:650}
   .title p{margin:2px 0 0;font-size:12.5px;color:var(--muted);letter-spacing:.2px}
 
-  .app{display:flex;height:calc(100vh - 67px);min-height:0}
+  .app{display:flex;flex:1;min-height:0}
   aside{
     width:320px;flex:none;background:var(--panel);
     border-right:1px solid var(--line);
@@ -161,9 +162,55 @@
     margin:12px 18px 0;padding:9px 12px;border-radius:9px;font-size:12px;
     background:#fff6e6;color:#8a5a00;border:1px solid #f3dca0;display:none
   }
-  @media (max-width:760px){
-    aside{width:100%;position:absolute;z-index:30;height:auto;max-height:60vh;border-right:none;border-bottom:1px solid var(--line)}
+  /* mobile-only helpers (hidden on desktop) */
+  .m-only{display:none}
+  .sheet-grab{display:none}
+  .sheet-head{display:none}
+  .bar-btn{
+    border:1px solid var(--line-strong);background:#fff;border-radius:8px;
+    padding:7px 12px;font-size:13px;font-weight:650;cursor:pointer;font-family:inherit;color:var(--text)
+  }
+  .bar-btn.accent{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .bar-btn:disabled{opacity:.4;cursor:not-allowed}
+  .backdrop{
+    position:fixed;inset:0;background:rgba(15,20,35,.4);
+    opacity:0;visibility:hidden;transition:opacity .25s,visibility .25s;z-index:38
+  }
+  .backdrop.show{opacity:1;visibility:visible}
+
+  @media (max-width:880px){
     .app{flex-direction:column}
+    main{flex:1;min-height:0}
+    /* 側欄 → 底部抽屜 */
+    aside{
+      position:fixed;left:0;right:0;bottom:0;width:auto;
+      max-height:82vh;z-index:40;padding:0 16px 28px;
+      border-right:none;border-top:1px solid var(--line);
+      border-radius:18px 18px 0 0;
+      box-shadow:0 -10px 30px rgba(20,30,60,.18);
+      transform:translateY(100%);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    aside.open{transform:translateY(0)}
+    .sheet-grab{display:block;width:42px;height:4px;border-radius:3px;background:var(--line-strong);margin:9px auto 2px}
+    .sheet-head{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:4px 0 12px;position:sticky;top:0;background:var(--panel);z-index:2
+    }
+    .sheet-head h2{font-size:15px;margin:0;font-weight:650}
+    .sheet-close{border:none;background:var(--ink-soft);color:var(--ink);border-radius:8px;
+      padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer;font-family:inherit}
+    .m-only{display:inline-flex;align-items:center;gap:5px}
+    .bar{padding:8px 12px;gap:8px}
+    .badge{display:none}
+    .stage{padding:14px}
+    header{padding:12px 16px;gap:11px}
+    .title p{display:none}
+    .mark{width:30px;height:30px}
+  }
+  @media (max-width:380px){
+    .pager .info{min-width:64px;font-size:12px}
+    .title h1{font-size:15px}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
   :focus-visible{outline:2px solid var(--ink-bright);outline-offset:2px}
@@ -184,6 +231,9 @@
 
 <div class="app">
   <aside>
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2>印章工具</h2><button class="sheet-close" id="sheetClose">完成</button></div>
+
     <!-- Step 1 -->
     <div class="step">
       <div class="step-head"><span class="num">1</span><h2>上傳 PDF</h2></div>
@@ -261,6 +311,8 @@
       </div>
       <div class="spacer"></div>
       <div class="badge">此頁印章：<span class="pin" id="pagePins">0</span></div>
+      <button class="bar-btn m-only" id="toolsBtn">🔧 工具</button>
+      <button class="bar-btn accent m-only" id="exportBtnM" disabled>匯出</button>
     </div>
     <div class="warn" id="rotWarn">⚠ 偵測到此 PDF 有頁面方向旋轉，蓋章位置可能會偏移，建議使用方向正常的 PDF。</div>
     <div class="stage" id="stage">
@@ -273,6 +325,7 @@
   </main>
 </div>
 
+<div class="backdrop" id="backdrop"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -291,6 +344,16 @@ const S = {
 const $ = id => document.getElementById(id);
 const stage=$('stage'), toast=$('toast');
 let wrap=null, canvas=null;
+
+/* ---------- bottom sheet (mobile) ---------- */
+const sheet=document.querySelector('aside'), backdrop=$('backdrop');
+const isMobile=()=>window.matchMedia('(max-width:880px)').matches;
+function openSheet(){ if(!isMobile())return; sheet.classList.add('open'); backdrop.classList.add('show'); }
+function closeSheet(){ sheet.classList.remove('open'); backdrop.classList.remove('show'); }
+function toggleSheet(){ sheet.classList.contains('open')?closeSheet():openSheet(); }
+$('toolsBtn').addEventListener('click',toggleSheet);
+$('sheetClose').addEventListener('click',closeSheet);
+backdrop.addEventListener('click',closeSheet);
 
 /* ---------- helpers ---------- */
 function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>toast.classList.remove('show'),2200); }
@@ -455,6 +518,7 @@ function addStamp(toAllPages){
     S.sel=id;
   }
   renderPlacements(); refreshControls();
+  if(isMobile()) closeSheet();
 }
 
 function removePlacement(id){ S.placements=S.placements.filter(p=>p.id!==id); if(S.sel===id)S.sel=null; renderPlacements(); refreshControls(); }
@@ -471,7 +535,7 @@ function selected(){ return S.placements.find(p=>p.id===S.sel); }
 function refreshControls(){
   const ready = !!S.pdfDoc && !!S.stampUrl;
   $('addBtn').disabled=!ready; $('allBtn').disabled=!ready;
-  $('exportBtn').disabled=!S.pdfDoc;
+  $('exportBtn').disabled=!S.pdfDoc; $('exportBtnM').disabled=!S.pdfDoc;
   $('clrBtn').disabled = !S.placements.some(p=>p.page===S.cur);
   const p=selected();
   $('delBtn').disabled=!p;
@@ -498,9 +562,11 @@ $('nextBtn').addEventListener('click',async()=>{if(S.cur<S.numPages-1){S.cur++;S
 
 /* ---------- export ---------- */
 $('exportBtn').addEventListener('click', exportPdf);
+$('exportBtnM').addEventListener('click', exportPdf);
 async function exportPdf(){
   if(!S.pdfDoc) return;
-  const btn=$('exportBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='處理中…';
+  const btn=$('exportBtn'); const btnM=$('exportBtnM'); const old=btn.textContent;
+  btn.disabled=true; btnM.disabled=true; btn.textContent='處理中…';
   try{
     const pdfBytes = await S.pdfFile.arrayBuffer();
     const doc = await PDFDocument.load(pdfBytes);
@@ -533,11 +599,18 @@ async function exportPdf(){
     showToast('已匯出：'+base+'_蓋章.pdf');
   }catch(err){
     console.error(err); showToast('匯出失敗：'+(err&&err.message||'未知錯誤'));
-  }finally{ btn.disabled=false; btn.textContent=old; }
+  }finally{ btn.disabled=false; btnM.disabled=false; btn.textContent=old; }
 }
 
 /* ---------- responsive re-render ---------- */
-let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(S.pdfDoc) renderPage(); },180); });
+let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(!isMobile()) closeSheet(); if(S.pdfDoc) renderPage(); },180); });
+
+/* ---------- init ---------- */
+(function init(){
+  const es=$('emptyState');
+  if(es){ es.style.cursor='pointer'; es.addEventListener('click',()=>{ if(isMobile()) openSheet(); }); }
+  if(isMobile()) openSheet();   // 手機首次開啟先顯示工具抽屜以便上傳
+})();
 </script>
 </body>
 </html>
